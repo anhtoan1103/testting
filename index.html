@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Rút thăm</title>
+<style>
+    body { font-family: Arial; max-width: 500px; margin: 40px auto; }
+    button { padding: 10px 20px; }
+</style>
+</head>
+<body>
+
+<h2>Rút thăm</h2>
+
+<p>Nhập tên của bạn:</p>
+<input id="myName" placeholder="Ví dụ: An">
+
+<button onclick="start()">Rút</button>
+
+<div id="msg"></div>
+
+<script>
+// ===========================
+// CONFIG
+// ===========================
+const participants = ["An", "Binh", "Chi", "Dung"];
+const SALT = "random_secret_salt_2025_please_change"; // đổi salt để bảo mật hơn
+
+// ===========================
+// HASH FUNCTION (SHA-256)
+// ===========================
+async function hashString(str) {
+    const msgUint8 = new TextEncoder().encode(str);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ===========================
+// MAIN
+// ===========================
+async function start() {
+    const myName = document.getElementById("myName").value.trim();
+
+    if (!participants.includes(myName)) {
+        alert("Tên bạn không có trong danh sách!");
+        return;
+    }
+
+    // Kiểm tra nếu user đã rút trước đó (bằng localStorage)
+    if (localStorage.getItem("drawn")) {
+        document.getElementById("msg").innerText =
+            "Bạn đã rút rồi! Kết quả hash: " + localStorage.getItem("drawn");
+        return;
+    }
+
+    // Tạo pool không chứa chính mình
+    const pool = participants.filter(x => x !== myName);
+
+    if (pool.length === 0) {
+        alert("Không còn ai để rút!");
+        return;
+    }
+
+    // Random pick
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+
+    // Hash kết quả
+    const hashed = await hashString(SALT + picked);
+
+    // Lưu để lần sau không rút nữa
+    localStorage.setItem("drawn", hashed);
+
+    // Chuyển hướng để mark kết quả
+    window.location.href = `/?result=${hashed}`;
+}
+
+// ===========================
+// Nếu URL có result -> hiển thị
+// ===========================
+const params = new URLSearchParams(window.location.search);
+const res = params.get("result");
+if (res) {
+    document.getElementById("msg").innerText =
+        "Bạn đã rút rồi! Kết quả hash: " + res;
+    localStorage.setItem("drawn", res);
+}
+</script>
+
+</body>
+</html>
