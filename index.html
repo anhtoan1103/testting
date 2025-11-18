@@ -5,7 +5,9 @@
 <title>Rút thăm</title>
 <style>
     body { font-family: Arial; max-width: 500px; margin: 40px auto; }
-    button { padding: 10px 20px; }
+    button { padding: 10px 20px; margin-top: 10px; }
+    #result { margin-top: 20px; font-size: 20px; font-weight: bold; }
+    #nextLink { margin-top: 20px; word-wrap: break-word; }
 </style>
 </head>
 <body>
@@ -13,18 +15,18 @@
 <h2>Rút thăm</h2>
 
 <p>Nhập tên của bạn:</p>
-<input id="myName" placeholder="Ví dụ: An">
-
+<input id="myName" placeholder="Ví dụ: An"><br><br>
 <button onclick="start()">Rút</button>
 
-<div id="msg"></div>
+<div id="result"></div>
+<div id="nextLink"></div>
 
 <script>
 // ===========================
 // CONFIG
 // ===========================
 const participants = ["An", "Binh", "Chi", "Dung"];
-const SALT = "random_secret_salt_2025_please_change"; // đổi salt để bảo mật hơn
+const SALT = "random_secret_salt_2025_change_me";
 
 // ===========================
 // HASH FUNCTION (SHA-256)
@@ -37,55 +39,53 @@ async function hashString(str) {
 }
 
 // ===========================
+// PARSE HASH LIST FROM URL
+// ===========================
+function getUsedHashes() {
+    const params = new URLSearchParams(window.location.search);
+    const list = params.get("used");
+    if (!list) return [];
+    return list.split(",");
+}
+
+// ===========================
 // MAIN
 // ===========================
 async function start() {
     const myName = document.getElementById("myName").value.trim();
-
     if (!participants.includes(myName)) {
         alert("Tên bạn không có trong danh sách!");
         return;
     }
 
-    // Kiểm tra nếu user đã rút trước đó (bằng localStorage)
-    if (localStorage.getItem("drawn")) {
-        document.getElementById("msg").innerText =
-            "Bạn đã rút rồi! Kết quả hash: " + localStorage.getItem("drawn");
-        return;
+    const usedHashes = getUsedHashes();
+
+    // Lọc ra những người đã bị rút (dựa vào hash)
+    const usedNames = [];
+    for (const name of participants) {
+        const h = await hashString(SALT + name);
+        if (usedHashes.includes(h)) {
+            usedNames.push(name);
+        }
     }
 
-    // Tạo pool không chứa chính mình
-    const pool = participants.filter(x => x !== myName);
+    // Tạo pool hợp lệ
+    const pool = participants.filter(
+        x => x !== myName && !usedNames.includes(x)
+    );
 
     if (pool.length === 0) {
-        alert("Không còn ai để rút!");
+        document.getElementById("result").innerText =
+            "Không còn tên nào hợp lệ để rút!";
         return;
     }
 
     // Random pick
     const picked = pool[Math.floor(Math.random() * pool.length)];
 
-    // Hash kết quả
-    const hashed = await hashString(SALT + picked);
+    // Hash của người được rút
+    const pickedHash = await hashString(SALT + picked);
 
-    // Lưu để lần sau không rút nữa
-    localStorage.setItem("drawn", hashed);
-
-    // Chuyển hướng để mark kết quả
-    window.location.href = `/?result=${hashed}`;
-}
-
-// ===========================
-// Nếu URL có result -> hiển thị
-// ===========================
-const params = new URLSearchParams(window.location.search);
-const res = params.get("result");
-if (res) {
-    document.getElementById("msg").innerText =
-        "Bạn đã rút rồi! Kết quả hash: " + res;
-    localStorage.setItem("drawn", res);
-}
-</script>
-
-</body>
-</html>
+    // Cập nhật URL cho người tiếp theo
+    const newList = [...usedHashes, pickedHash].join(",");
+    const nextURL = `${window.location.origin}
