@@ -14,8 +14,12 @@
 
 <h2>Rút thăm</h2>
 
-<p>Nhập tên của bạn:</p>
-<input id="myName" placeholder="Ví dụ: An"><br><br>
+<p>Chọn tên của bạn:</p>
+<select id="myName">
+    <option value="">-- Chọn tên --</option>
+</select>
+
+<br><br>
 <button onclick="start()">Rút</button>
 
 <div id="result"></div>
@@ -27,6 +31,15 @@
 // ===========================
 const participants = ["An", "Binh", "Chi", "Dung"];
 const SALT = "random_secret_salt_2025_change_me";
+
+// Populate dropdown
+const select = document.getElementById("myName");
+participants.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+});
 
 // ===========================
 // HASH FUNCTION (SHA-256)
@@ -49,18 +62,19 @@ function getUsedHashes() {
 }
 
 // ===========================
-// MAIN
+// MAIN DRAW FUNCTION
 // ===========================
 async function start() {
-    const myName = document.getElementById("myName").value.trim();
-    if (!participants.includes(myName)) {
-        alert("Tên bạn không có trong danh sách!");
+    const myName = document.getElementById("myName").value;
+
+    if (!myName) {
+        alert("Vui lòng chọn tên của bạn");
         return;
     }
 
     const usedHashes = getUsedHashes();
 
-    // Lọc ra những người đã bị rút (dựa vào hash)
+    // Identify names already drawn
     const usedNames = [];
     for (const name of participants) {
         const h = await hashString(SALT + name);
@@ -69,7 +83,7 @@ async function start() {
         }
     }
 
-    // Tạo pool hợp lệ
+    // Valid pool (not self + not used)
     const pool = participants.filter(
         x => x !== myName && !usedNames.includes(x)
     );
@@ -83,9 +97,21 @@ async function start() {
     // Random pick
     const picked = pool[Math.floor(Math.random() * pool.length)];
 
-    // Hash của người được rút
+    // Hash picked name
     const pickedHash = await hashString(SALT + picked);
 
-    // Cập nhật URL cho người tiếp theo
+    // Build URL for next person
     const newList = [...usedHashes, pickedHash].join(",");
-    const nextURL = `${window.location.origin}
+    const nextURL = `${window.location.origin}${window.location.pathname}?used=${newList}`;
+
+    // Show results
+    document.getElementById("result").innerHTML =
+        `Bạn rút được: <b>${picked}</b>`;
+
+    document.getElementById("nextLink").innerHTML =
+        `Link để gửi cho người tiếp theo:<br><a href="${nextURL}">${nextURL}</a>`;
+}
+</script>
+
+</body>
+</html>
