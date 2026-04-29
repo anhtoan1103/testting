@@ -14,12 +14,7 @@ const resultsPage = (con) => `<!doctype html>
 </body></html>`;
 
 module.exports = (req, res) => {
-  if (req.method !== 'POST') {
-    res.statusCode = 405;
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Allow', 'POST');
-    return res.end('<h1>405 Method Not Allowed</h1>');
-  }
+  if (req.method == 'POST') {
 
   const con = (req.body && req.body.con) || 'FJP001034947';
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -32,5 +27,6 @@ module.exports = (req, res) => {
   res.setHeader('X-Xss-Protection', '1; mode=block');
   res.statusCode = 200;
   res.end(resultsPage(con));
+  }
 };
 
