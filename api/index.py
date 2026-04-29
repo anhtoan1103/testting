@@ -93,7 +93,8 @@ FORM_PAGE = """\
   <div class="panel">
     <form method="POST" action="/results">
       <label>Consignment number:
-        <input type="text" name="con" value="FJP001034947" required>
+        <input type="text" name="con" placeholder="e.g. FJP001034947"
+               required autofocus>
       </label>
       <input type="hidden" name="conID" value="1389330640">
       <input type="hidden" name="CITCon" value="True">
