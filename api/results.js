@@ -28,9 +28,19 @@ module.exports = (req, res) => {
   noCache(res);
 
   if (req.method === 'POST') {
-    const con = (req.body && req.body.con) || 'FJP001034947';
-    res.statusCode = 200;
-    return res.end(resultsPage(con, 'POST'));
+    if (req.method === 'POST') {
+      const con = (req.body && req.body.con) || 'FJP001034947';
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'private');
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains;');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+      res.setHeader('X-Tnt', '5FE265A');
+      res.setHeader('X-Xss-Protection', '1; mode=block');
+      res.statusCode = 200;
+      return res.end(resultsPage(con, 'POST'));                       
+    }
   }
 
   if (req.method === 'GET') {
