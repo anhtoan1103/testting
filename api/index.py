@@ -1,72 +1,4 @@
 #!/usr/bin/env python3
-"""
-SV-31869 Reproducer for back-navigation to a POST result page.
-
-What this reproduces
---------------------
-Chromium history-back to a POST entry uses LOAD_ONLY_FROM_CACHE
-(see content/browser/renderer_host/navigation_request.cc, the
-HISTORY_DIFFERENT_DOCUMENT branch of UpdateLoadFlagsWithCacheFlags).
-If the POST response was uncacheable (Cache-Control: no-store / no-cache),
-that fetch returns ERR_CACHE_MISS and Chromium commits the failed
-navigation as chrome-error://chromewebdata/ (render_frame_impl.cc).
-
-In native Chrome this is masked by bfcache: the rendered POST page is
-restored from bfcache and the cache-only flag is never exercised.
-
-To make Chromium fall onto the cache-only path the page must NOT be
-bfcache-eligible. Modern Chrome (>=121) can bfcache Cache-Control: no-store
-pages by default, so `no-store` alone is not a reliable disqualifier
-anymore. The customer's TNT page is excluded for a combination of reasons
-(injected Menlo scripts, CSP, etc.); we replicate that here defensively
-with an `unload` listener (universal, long-standing bfcache disqualifier).
-
-To repro the bug locally the test page must:
-  (1) accept a POST and return content,
-  (2) make that response uncacheable (Cache-Control: no-store), and
-  (3) be bfcache-hostile (unload listener / WebSocket / etc.).
-
-Ji Feng's earlier test apps likely reproduced (1)+(2) but not (3), so
-bfcache restored the DOM and the cache-only fetch was never exercised.
-
-Routes
-------
-  GET  /             search form, posts to /results
-  POST /results      tracking results page (Cache-Control: no-store).
-                     Has a link to /detail and an in-page "Back" button.
-  GET  /results      502 Bad Gateway, useful only as a secondary signal:
-                     if you ever DO see this 502 body in the surrogate,
-                     it means the back nav hit the network (not the
-                     cache-miss path); that would be a different bug.
-  GET  /detail       detail page with an in-page "Back" button
-                     (mimics the SigImg.asp "Back" button)
-
-Reproduction
-------------
-  1. Open  /                                in safeview
-  2. Submit the form     (POST /results)    -> results page renders
-  3. Click "View Detail" (GET  /detail)     -> detail page renders
-  4. Click "Back" (in-page, OR browser back)
-
-  Expected in safeview (with bfcache off): chrome-error://chromewebdata/
-    page rendered for /results; the WebSocket frames show
-    [history_jump,-1] then a set_doctype to chrome-error://chromewebdata/.
-
-  Expected in native Chrome: bfcache restores the page; you do NOT see a
-    POST on the wire, because no fetch happens.
-
-  If you want to also see native fall back to ERR_CACHE_MISS, disable
-    bfcache: chrome --disable-features=BackForwardCache.
-
-Run
----
-  python3 test_app.py            # listens on 0.0.0.0:8080
-  python3 test_app.py 9000       # listens on 0.0.0.0:9000
-
-Then put it behind whatever public hostname you usually use for repros
-(e.g. corgi.webredirect.org/menlo/sv31869-bug) and access it through the
-isolated browser.
-"""
 
 import sys
 import time
@@ -93,7 +25,7 @@ FORM_PAGE = """\
   <div class="panel">
     <form method="POST" action="/results">
       <label>Consignment number:
-        <input type="text" name="con" placeholder="e.g. FJP001034947"
+        <input type="text" name="con" value="FJP001034947"
                required autofocus>
       </label>
       <input type="hidden" name="conID" value="1389330640">
@@ -101,7 +33,7 @@ FORM_PAGE = """\
       <p><button type="submit">Track</button></p>
     </form>
     <p style="color:#888; font-size: 12px;">
-      Reproducer for SV-31869. Submitting POSTs to /results.
+      Submitting POSTs to /results.
     </p>
   </div>
 </body>
@@ -130,16 +62,6 @@ def results_page(con: str, conid: str) -> str:
   }}
 </style>
 <script>
-  // Force bfcache disqualification with a stack of independent blockers,
-  // because no single one is reliable on modern Chromium:
-  //   - `unload`/`beforeunload` listeners
-  //   - an open WebSocket (BfCache disqualifier even when the connect fails)
-  //   - a dedicated Worker
-  //   - a BroadcastChannel
-  //   - a SharedWorker (via try/catch so it doesn't error on UAs without it)
-  // Combined with `Cache-Control: no-store` on the POST response, this
-  // forces history-back to take the LOAD_ONLY_FROM_CACHE path, where the
-  // cache lookup misses and Chromium commits chrome-error://chromewebdata/.
   window.addEventListener('unload', function () {{ /* keep me */ }});
   window.addEventListener('beforeunload', function () {{ /* keep me */ }});
   try {{
@@ -263,11 +185,6 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/results":
-            # If you ever see this body rendered in the surrogate, it means
-            # the back nav reached the network (not the cache-miss path).
-            # Under SV-31869 the surrogate should never reach this branch:
-            # LOAD_ONLY_FROM_CACHE on history-back fails before the network
-            # is consulted, and the user lands on chrome-error directly.
             self.log_message("GET /results -> 502 (POST-only)")
             self._send(502, ERROR_BODY)
             return
