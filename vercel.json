@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/results", "destination": "/api/results" },
+    { "source": "/sigimg",  "destination": "/api/sigimg" }
+  ]
+}
