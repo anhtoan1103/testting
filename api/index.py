@@ -14,22 +14,20 @@ navigation as chrome-error://chromewebdata/ (render_frame_impl.cc).
 In native Chrome this is masked by bfcache: the rendered POST page is
 restored from bfcache and the cache-only flag is never exercised.
 
-In the safeview surrogate Chromium bfcache is effectively disabled:
-  - safeview/renderer/safeview_render_frame_observer.cc:1205 marks any
-    script injection as BackForwardCacheAware::kPossiblyDisallow,
-  - the WebSocket connection used by every TC page disqualifies bfcache.
-With no bfcache, history-back hits LOAD_ONLY_FROM_CACHE -> ERR_CACHE_MISS
--> chrome-error://chromewebdata/, exactly as the customer's WebSocket
-trace shows ([history_jump,-1] then a set_doctype to chrome-error://...).
+To make Chromium fall onto the cache-only path the page must NOT be
+bfcache-eligible. Modern Chrome (>=121) can bfcache Cache-Control: no-store
+pages by default, so `no-store` alone is not a reliable disqualifier
+anymore. The customer's TNT page is excluded for a combination of reasons
+(injected Menlo scripts, CSP, etc.); we replicate that here defensively
+with an `unload` listener (universal, long-standing bfcache disqualifier).
 
-To repro the bug locally the only thing the test page must do is:
+To repro the bug locally the test page must:
   (1) accept a POST and return content,
-  (2) make that response uncacheable (Cache-Control: no-store).
-That's it. The forward GET page is just a hop so the back-button has
-something to navigate from.
+  (2) make that response uncacheable (Cache-Control: no-store), and
+  (3) be bfcache-hostile (unload listener / WebSocket / etc.).
 
-Ji Feng's earlier test apps did not reproduce because their POST response
-was cacheable, so the cache-only fetch succeeded.
+Ji Feng's earlier test apps likely reproduced (1)+(2) but not (3), so
+bfcache restored the DOM and the cache-only fetch was never exercised.
 
 Routes
 ------
@@ -130,6 +128,14 @@ def results_page(con: str, conid: str) -> str:
     font: inherit;
   }}
 </style>
+<script>
+  // Force bfcache disqualification. An `unload` listener is a universal,
+  // long-standing bfcache blocker; combined with `Cache-Control: no-store`
+  // on the POST response below, this guarantees the back-navigation must
+  // re-fetch from the http cache and exposes the LOAD_ONLY_FROM_CACHE ->
+  // ERR_CACHE_MISS path that produces chrome-error://chromewebdata/.
+  window.addEventListener('unload', function () {{ /* keep me */ }});
+</script>
 </head>
 <body>
   <h1>Consignment Status History</h1>
@@ -145,8 +151,9 @@ def results_page(con: str, conid: str) -> str:
     <a class="btn" href="/detail?con={con}&conID={conid}">View POD Image</a>
   </div>
   <p style="color:#888; font-size: 12px; margin-top: 32px;">
-    This page was rendered from a POST. Reload or back-navigate from /detail
-    will trigger a re-fetch; if the re-fetch loses POST it hits 502.
+    This page was rendered from a POST and is intentionally bfcache-hostile
+    (unload handler + Cache-Control: no-store). Back from /detail should
+    land on chrome-error://chromewebdata/ in safeview.
   </p>
 </body>
 </html>
