@@ -130,12 +130,33 @@ def results_page(con: str, conid: str) -> str:
   }}
 </style>
 <script>
-  // Force bfcache disqualification. An `unload` listener is a universal,
-  // long-standing bfcache blocker; combined with `Cache-Control: no-store`
-  // on the POST response below, this guarantees the back-navigation must
-  // re-fetch from the http cache and exposes the LOAD_ONLY_FROM_CACHE ->
-  // ERR_CACHE_MISS path that produces chrome-error://chromewebdata/.
+  // Force bfcache disqualification with a stack of independent blockers,
+  // because no single one is reliable on modern Chromium:
+  //   - `unload`/`beforeunload` listeners
+  //   - an open WebSocket (BfCache disqualifier even when the connect fails)
+  //   - a dedicated Worker
+  //   - a BroadcastChannel
+  //   - a SharedWorker (via try/catch so it doesn't error on UAs without it)
+  // Combined with `Cache-Control: no-store` on the POST response, this
+  // forces history-back to take the LOAD_ONLY_FROM_CACHE path, where the
+  // cache lookup misses and Chromium commits chrome-error://chromewebdata/.
   window.addEventListener('unload', function () {{ /* keep me */ }});
+  window.addEventListener('beforeunload', function () {{ /* keep me */ }});
+  try {{
+    // Connect to a guaranteed-unreachable port; the act of constructing
+    // the WebSocket disqualifies bfcache regardless of connect outcome.
+    new WebSocket('wss://' + location.host + '/__sv31869_ws_disqualifier');
+  }} catch (e) {{}}
+  try {{
+    // Dedicated Worker: long-standing bfcache disqualifier.
+    new Worker('data:application/javascript,setInterval(()=>{{}},60000);');
+  }} catch (e) {{}}
+  try {{
+    new BroadcastChannel('sv31869-bfcache-blocker');
+  }} catch (e) {{}}
+  try {{
+    new SharedWorker('data:application/javascript,;');
+  }} catch (e) {{}}
 </script>
 </head>
 <body>
