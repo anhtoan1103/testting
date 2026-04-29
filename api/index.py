@@ -161,9 +161,6 @@ class handler(BaseHTTPRequestHandler):
             self._send(200, FORM_PAGE)
             return
 
-        if path == "/results":
-            self._send(502, ERROR_BODY)
-            return
 
         if path == "/detail":
             con = (query.get("con") or ["?"])[0]
