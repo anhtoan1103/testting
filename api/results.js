@@ -14,20 +14,17 @@ const resultsPage = (con) => `<!doctype html>
 </body></html>`;
 
 module.exports = (req, res) => {
-  if (req.method == 'POST') {
+  if (req.method !== 'POST') return;
 
   const con = (req.body && req.body.con) || 'FJP001034947';
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'private');
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains;');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-Tnt', '5FE265A');
   res.setHeader('X-Xss-Protection', '1; mode=block');
   res.statusCode = 200;
   res.end(resultsPage(con));
-  }
 };
-
