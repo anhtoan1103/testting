@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/((?!repro\\.html|customer-snapshot\\.html|static/).*)", "destination": "/index.html" }
+  ]
+}
