@@ -8,7 +8,7 @@
 <style>
   body { background: #f5f7fb; font-family: system-ui, -apple-system, sans-serif; }
   .controls { padding: 24px; max-width: 980px; margin: 0 auto; }
-  pre.log { background: #111; color: #c8e6c9; padding: 10px; border-radius: 4px; max-height: 240px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+  pre.log { background: #111; color: #c8e6c9; padding: 10px; border-radius: 4px; max-height: 280px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
   .results-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0 8px; font-size: 13px; }
   .results-meta button { padding: 2px 8px; border: 1px solid #ccc; background: #fff; border-radius: 4px; }
   .results-meta button.active { background: #18488a; color: #fff; border-color: #18488a; }
@@ -16,6 +16,8 @@
   table.results { width: 100%; border-collapse: collapse; }
   table.results th, table.results td { padding: 6px 12px; font-size: 13px; border-bottom: 1px solid #eee; text-align: left; }
   .badge-state { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #e3f2fd; color: #18488a; margin-left: 8px; }
+  .toggles { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; padding: 10px 12px; background: #fff; border-radius: 6px; margin: 12px 0; }
+  .toggles label { font-size: 13px; }
 </style>
 </head>
 <body>
@@ -38,10 +40,16 @@ function tsNow() {
 function logEvent(line, kind) {
   const el = document.getElementById('event-log');
   if (!el) return;
-  const color = kind === 'close' ? '#ff8a80' : kind === 'open' ? '#9be7a8' : '#c8e6c9';
+  const color = kind === 'close' ? '#ff8a80' : kind === 'open' ? '#9be7a8' : kind === 'event' ? '#90caf9' : '#c8e6c9';
   el.innerHTML =
     '<span style="color:' + color + '">[' + tsNow() + '] ' + line + '</span>\n' + el.innerHTML;
 }
+
+const HANDLER_MODES = {
+  SYNC: 'sync (setTimeout in body)',
+  ASYNC_AWAIT: 'async/await with sleep(800)',
+  ASYNC_FETCH: 'async/await with real fetch (will fail → catch)',
+};
 
 function ResultsTable() {
   const rows = [
@@ -82,20 +90,92 @@ function ResultsTable() {
   );
 }
 
-function SearchModal({ show, onHide }) {
+function describeTarget(t) {
+  if (!t) return 'null';
+  if (t === document) return 'document';
+  if (t.nodeType !== 1) return 'node(' + t.nodeType + ')';
+  let s = t.tagName.toLowerCase();
+  if (t.id) s += '#' + t.id;
+  if (t.classList && t.classList.length) s += '.' + Array.from(t.classList).slice(0, 3).join('.');
+  return s;
+}
+
+function SearchModal({ show, onHide, mode, closeOnError }) {
   const [hasResults, setHasResults] = React.useState(false);
+  const reqId = React.useRef(0);
 
   React.useEffect(() => {
     if (show) setHasResults(false);
   }, [show]);
 
+  // Capture-phase listeners so we see EVERY mousedown / mouseup / click / submit
+  // / focus that reaches the dialog, not just what react-bootstrap reacts to.
+  React.useEffect(() => {
+    if (!show) return;
+    const handlers = {};
+    ['mousedown', 'mouseup', 'click', 'submit', 'focusin', 'focusout'].forEach((type) => {
+      handlers[type] = (e) => {
+        const inDialog = e.target && e.target.closest && e.target.closest('[role="dialog"]');
+        logEvent(type + ' target=' + describeTarget(e.target) + ' inDialog=' + !!inDialog, 'event');
+      };
+      document.addEventListener(type, handlers[type], true);
+    });
+    return () => {
+      Object.keys(handlers).forEach((type) =>
+        document.removeEventListener(type, handlers[type], true)
+      );
+    };
+  }, [show]);
+
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    logEvent('form submit fired → simulating server response in 800 ms');
-    setTimeout(() => {
-      logEvent('response arrived → setHasResults(true), results table renders inside modal-body');
-      setHasResults(true);
-    }, 800);
+    const id = ++reqId.current;
+    logEvent('handleSubmit start (mode=' + mode + ', reqId=' + id + ', target=' + describeTarget(e.target) + ')');
+
+    if (mode === HANDLER_MODES.SYNC) {
+      setTimeout(() => {
+        logEvent('sync setTimeout body running (reqId=' + id + ') → setHasResults(true)');
+        setHasResults(true);
+      }, 800);
+      return;
+    }
+
+    if (mode === HANDLER_MODES.ASYNC_AWAIT) {
+      (async () => {
+        await sleep(800);
+        logEvent('async resumed after sleep(800) (reqId=' + id + ') → setHasResults(true)');
+        setHasResults(true);
+      })();
+      return;
+    }
+
+    if (mode === HANDLER_MODES.ASYNC_FETCH) {
+      (async () => {
+        try {
+          logEvent('async fetch starting (reqId=' + id + ')');
+          // Hits a non-existent endpoint on the same origin so it returns 404
+          // (or CORS-fails on a cross-origin host). Either way the catch path
+          // executes — which mirrors what the customer's app might do on a
+          // failed search.
+          const res = await fetch('/api/sub-merchants?q=&_=' + id, { method: 'POST' });
+          logEvent('fetch resolved status=' + res.status + ' (reqId=' + id + ')');
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          await res.json();
+          setHasResults(true);
+        } catch (err) {
+          logEvent('fetch rejected (reqId=' + id + '): ' + err.message, 'close');
+          if (closeOnError) {
+            logEvent('closeOnError=true → calling onHide()', 'close');
+            onHide();
+          } else {
+            setHasResults(true);
+          }
+        }
+      })();
+      return;
+    }
   };
 
   return (
@@ -160,6 +240,8 @@ function SearchModal({ show, onHide }) {
 
 function App() {
   const [show, setShow] = React.useState(true);
+  const [mode, setMode] = React.useState(HANDLER_MODES.ASYNC_AWAIT);
+  const [closeOnError, setCloseOnError] = React.useState(true);
 
   return (
     <div className="controls">
@@ -167,15 +249,42 @@ function App() {
       <p className="text-muted">
         Real React 18 + react-bootstrap Modal mimicking the
         partnerlink-ikspiari.gmo-fg.com flow. The modal opens automatically.
-        Click <strong>検索</strong> — ~800 ms later the results table renders
-        inside the same modal-body. Watch whether the modal stays open
-        (expected) or auto-closes (the bug).
+        Click <strong>検索</strong> — depending on the handler mode, results
+        render after ~800 ms (or fetch fails). Watch whether the modal stays
+        open (expected) or auto-closes (the bug).
       </p>
+
+      <div className="toggles">
+        <span><strong>handleSubmit:</strong></span>
+        {Object.values(HANDLER_MODES).map((m) => (
+          <label key={m}>
+            <input
+              type="radio"
+              name="mode"
+              checked={mode === m}
+              onChange={() => setMode(m)}
+            /> {m}
+          </label>
+        ))}
+      </div>
+
+      <div className="toggles">
+        <label>
+          <input
+            type="checkbox"
+            checked={closeOnError}
+            onChange={(e) => setCloseOnError(e.target.checked)}
+          /> close modal in fetch <code>catch</code> block (only relevant for fetch mode)
+        </label>
+      </div>
+
       <Button onClick={() => setShow(true)} disabled={show}>Re-open modal</Button>
       <span className="badge-state">modal: {show ? 'open' : 'closed'}</span>
-      <h6 className="mt-4">Event log <small className="text-muted">(most recent at top)</small></h6>
+
+      <h6 className="mt-4">Event log <small className="text-muted">(most recent at top; capture-phase listeners on document for mousedown/mouseup/click/submit/focusin/focusout)</small></h6>
       <pre id="event-log" className="log"></pre>
-      <SearchModal show={show} onHide={() => setShow(false)} />
+
+      <SearchModal show={show} onHide={() => setShow(false)} mode={mode} closeOnError={closeOnError} />
     </div>
   );
 }
